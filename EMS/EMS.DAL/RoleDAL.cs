@@ -2,7 +2,6 @@ using EMS.DAL.DTO;
 using EMS.DAL.Interfaces;
 using EMS.DAL.Mapper;
 using EMS.DB.Context;
-using EMS.DB.Mapper;
 using EMS.DB.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,15 +13,16 @@ public class RoleDAL : IRoleDAL
     private readonly IRoleMapper _roleMapper;
     private readonly IEmployeeMapper _employeeMapper;
 
-    public RoleDAL(EMSContext context)
+    public RoleDAL(EMSContext context, IRoleMapper roleMapper, IEmployeeMapper employeeMapper)
     {
         _context = context;
-        _roleMapper = new RoleMapper();
-        _employeeMapper = new EmployeeMapper();
+        _roleMapper = roleMapper;
+        _employeeMapper = employeeMapper;
     }
 
-    public async Task<int> InsertAsync(Role role)
+    public async Task<int> InsertAsync(RoleDto roleDto)
     {
+        Role role = _roleMapper.ToRoleModel(roleDto);
         _context.Role.Add(role);
         await _context.SaveChangesAsync();
 
@@ -35,7 +35,11 @@ public class RoleDAL : IRoleDAL
                 .Skip((filters!.PageNumber - 1) * filters.PageSize)
                 .Take(filters.PageSize)
                 .Include(r => r.Department)
+                .Include(r => r.Location)
+                .Include(r => r.Employee)
                 .ToListAsync();
+
+
         return _roleMapper.ToRoleDto(roles);
     }
 
@@ -43,7 +47,23 @@ public class RoleDAL : IRoleDAL
     {
         var roles = await _context.Role
                 .Include(r => r.Department)
+                .Include(r => r.Location)
+                .Include(r => r.Employee)
                 .Where(r => r.DepartmentId == filters.DepartmentId)
+                .Skip((filters.PageNumber - 1) * filters.PageSize)
+                .Take(filters.PageSize)
+                .ToListAsync();
+
+        return _roleMapper.ToRoleDto(roles);
+    }
+
+    public async Task<List<RoleDto>> RetrieveByLocIdAsync(RoleFilters filters)
+    {
+        var roles = await _context.Role
+                .Include(r => r.Department)
+                .Include(r => r.Location)
+                .Include(r => r.Employee)
+                .Where(r => r.LocationId == filters.LocationId)
                 .Skip((filters.PageNumber - 1) * filters.PageSize)
                 .Take(filters.PageSize)
                 .ToListAsync();
@@ -53,7 +73,11 @@ public class RoleDAL : IRoleDAL
 
     public async Task<List<RoleDto>> RetrieveByRoleIdAsync(RoleFilters filters)
     {
-        var roles = await _context.Role.Include(r => r.Department).Where(r => r.Id == filters.RoleId).ToListAsync();
+        var roles = await _context.Role
+            .Include(r => r.Department)
+            .Include(r => r.Location)
+            .Include(r => r.Employee)
+            .Where(r => r.Id == filters.RoleId).ToListAsync();
         return _roleMapper.ToRoleDto(roles);
     }
 
@@ -64,11 +88,28 @@ public class RoleDAL : IRoleDAL
             return null;
         }
 
-        var roles = _context.Role.Include(r => r.Department).AsQueryable();
+        var roles = _context.Role.Include(r => r.Department)
+            .Include(r => r.Location)
+            .Include(r => r.Location)
+            .Include(r => r.Employee)
+            .AsQueryable();
 
         if (filters.Departments != null && filters.Departments.Count != 0)
         {
-            roles = roles.Where(e => e.DepartmentId.HasValue && filters.Departments.Contains(e.DepartmentId.Value));
+            roles = roles.Where(r => r.DepartmentId.HasValue && filters.Departments.Contains(r.DepartmentId.Value));
+        }
+
+        if (filters.Locations != null && filters.Locations.Count != 0)
+        {
+            roles = roles.Where(r => r.LocationId.HasValue && filters.Locations.Contains(r.LocationId.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Search))
+        {
+            roles = roles.Where(r =>
+                (r.Name != null && r.Name.Contains(filters.Search)) ||
+                (r.Location!.Name != null && r.Location.Name.Contains(filters.Search)) ||
+                (r.Department!.Name != null && r.Department.Name.Contains(filters.Search)));
         }
 
         // Apply pagination

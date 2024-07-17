@@ -1,8 +1,8 @@
-using EMS.DAL.DTO;
+﻿using EMS.DAL.DTO;
 using EMS.DAL.Interfaces;
 using EMS.DB.Models;
 
-namespace EMS.DB.Mapper;
+namespace EMS.DAL.Mapper;
 
 public class EmployeeMapper : IEmployeeMapper
 {
@@ -36,11 +36,12 @@ public class EmployeeMapper : IEmployeeMapper
             IsManager = employee.IsManager,
             ManagerName = employee.Manager != null ? $"{employee.Manager.FirstName} {employee.Manager.LastName}" : null,
             ModeStatusId = employee.ModeStatusId,
-            ModeStatusName = employee.Mode!.Name
+            ModeStatusName = employee.Mode?.Name,
+            ProfileImagePath = employee.ProfileImagePath,
         };
     }
 
-    public List<EmployeeDto> ToEmployeeDto(IEnumerable<Employee> employees)
+    public List<EmployeeDto> ToEmployeeDto(List<Employee> employees)
     {
         return employees.Select(ToEmployeeDto).ToList()!;
     }
@@ -61,7 +62,8 @@ public class EmployeeMapper : IEmployeeMapper
             RoleId = EmployeeDto.RoleId,
             DepartmentId = EmployeeDto.DepartmentId,
             ProjectId = EmployeeDto.ProjectId,
-            ManagerId = EmployeeDto.ManagerId
+            ManagerId = EmployeeDto.ManagerId,
+            ProfileImagePath = EmployeeDto.ProfileImagePath,
         };
     }
 }

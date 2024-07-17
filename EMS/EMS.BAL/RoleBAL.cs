@@ -1,6 +1,4 @@
-
-using EMS.BAL.Interfaces;
-using EMS.DB.Models;
+﻿using EMS.BAL.Interfaces;
 using EMS.DAL.Interfaces;
 using Serilog;
 using EMS.DAL.DTO;
@@ -18,7 +16,7 @@ public class RoleBAL : IRoleBAL
         _logger = logger;
     }
 
-    public async Task<int> AddRoleAsync(Role role)
+    public async Task<int> AddRoleAsync(RoleDto role)
     {
         try
         {
@@ -57,6 +55,21 @@ public class RoleBAL : IRoleBAL
         catch (Exception ex)
         {
             _logger.Error($"Error occurred while retrieving roles by department id: {ex.Message}");
+            throw;
+        }
+    }
+
+    public async Task<List<RoleDto>> GetRolesByLocIdAsync(RoleFilters filter)
+    {
+        try
+        {
+            List<RoleDto> roles;
+            roles = await _roleDal.RetrieveByLocIdAsync(filter) ?? [];
+            return roles;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Error occurred while retrieving roles by location id: {ex.Message}");
             throw;
         }
     }

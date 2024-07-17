@@ -34,7 +34,9 @@ public class EmployeeDto
     public string? RoleName { get; set; } = string.Empty;
     public int? ModeStatusId { get; set; }
     public string ModeStatusName { get; set; } = string.Empty;
+    public string? ProfileImagePath { get; set; } = string.Empty;
 
+    public byte[]? ProfileImageData { get; set; }
     public override string ToString()
     {
         return $"Employee ID: {UID}\n" +

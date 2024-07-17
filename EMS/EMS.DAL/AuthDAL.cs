@@ -3,10 +3,8 @@ using EMS.DAL.Interfaces;
 using EMS.DAL.Mapper;
 using EMS.DAL.Models;
 using EMS.DB.Context;
-using EMS.DB.Mapper;
 using EMS.DB.Models;
 using Microsoft.EntityFrameworkCore;
-using Serilog;
 
 namespace EMS.DAL;
 
@@ -26,7 +24,9 @@ public class AuthDAL : IAuthDAL
 
     public async Task<AuthenticateResponse?> AuthenticateAsync(string email)
     {
-        Employee? employee = await _context.Employee.SingleOrDefaultAsync(x => x.Email == email);
+        Employee? employee = await _context.Employee
+            .Include(e => e.Role).
+            SingleOrDefaultAsync(x => x.Email == email);
 
         if (employee == null)
         {

@@ -1,15 +1,13 @@
 using EMS.API.Helpers;
-using EMS.BAL;
 using EMS.BAL.Interfaces;
-using EMS.DAL;
-using EMS.DAL.Interfaces;
-using EMS.DB.Context;
 using EMS.DAL.DTO;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using EMS.DAL.Models;
+using Newtonsoft.Json;
 using EMS.DB.Models;
+using Microsoft.AspNetCore.JsonPatch;
 
 namespace EMS.API.Controllers;
 
@@ -19,47 +17,116 @@ public class EmployeeController : ControllerBase
 {
     private readonly IEmployeeBAL _employeeBal;
     private readonly Serilog.ILogger _logger;
+    private readonly string ImageUploadDirectory;
+    private readonly string folderPath;
+    private readonly ProfileImagesHelper _profileImagesHelper;
 
-    public EmployeeController(Serilog.ILogger logger, IEmployeeBAL employeeBAL)
+    public EmployeeController(Serilog.ILogger logger, IEmployeeBAL employeeBAL, IConfiguration configuration, ProfileImagesHelper profileImagesHelper)
     {
         _logger = logger;
+        _profileImagesHelper = profileImagesHelper;
         _employeeBal = employeeBAL;
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> AddEmployee([FromBody] EmployeeDto employee )
-    {
-        if (!ModelState.IsValid)
+        folderPath = Path.Combine(configuration.GetValue<string>("AppSettings:ImageUploadDirectory") ?? "StaticFiles", "Images");
+        ImageUploadDirectory = Path.Combine(Directory.GetCurrentDirectory(), folderPath);
+        if (!Directory.Exists(ImageUploadDirectory))
         {
-            return BadRequest(ModelState);
-        }
-        else
-        {
-            try
-            {
-                employee.Password = BCrypt.Net.BCrypt.HashPassword(employee.Password, 12);
-                var result = await _employeeBal.AddEmployeeAsync(employee);
-                return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), result);
-            }
-            catch (Exception)
-            {
-                return ResponseHelper.WrapResponse(500, StatusMessage.FAILURE.ToString(), null, ErrorCodes.FAILED_TO_ADD_EMPLOYEE.ToString());
-            }
+            Directory.CreateDirectory(ImageUploadDirectory);
         }
     }
 
-    [HttpPut("{id}")]
+    [HttpPost, DisableRequestSizeLimit]
     [Authorize]
-    public async Task<IActionResult> UpdateEmployee(int id, [FromBody] UpdateEmployeeDto employee)
+    public async Task<IActionResult> AddEmployee()
     {
         try
         {
-            var result = await _employeeBal.UpdateEmployeeAsync(id, employee);
-            if (result == 0)
+
+            var form = await Request.ReadFormAsync();
+            var employeeJson = form["employeeData"];
+
+            if (string.IsNullOrEmpty(employeeJson))
             {
-                return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEE_NOT_FOUND.ToString());
+                return BadRequest("Employee data is missing.");
             }
-            return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), result);
+
+            var employee = JsonConvert.DeserializeObject<EmployeeDto>(employeeJson!);
+
+            if (employee == null || !ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            // Get the uploaded file
+            var profileImage = form.Files.GetFile("profileImage");
+
+
+            var relativePath = await _profileImagesHelper.HandleProfileImageUpload(profileImage, employee.Id);
+            if (relativePath != null)
+            {
+                employee.ProfileImagePath = relativePath;
+            }
+
+            var result = await _employeeBal.AddEmployeeAsync(employee);
+            return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), 1);
+        }
+        catch (Exception)
+        {
+            return ResponseHelper.WrapResponse(500, StatusMessage.FAILURE.ToString(), null, ErrorCodes.FAILED_TO_ADD_EMPLOYEE.ToString());
+        }
+    }
+
+    [HttpPatch("{id}"), DisableRequestSizeLimit]
+    public async Task<IActionResult> UpdateEmployee(int id)
+    {
+        try
+        {
+            var form = await Request.ReadFormAsync();
+            var employeePatchDocument = form["patchEmployee"];
+            bool isModified = false;
+
+            if (string.IsNullOrEmpty(employeePatchDocument))
+            {
+                return BadRequest("Employee data is missing.");
+            }
+
+            var patchDoc = JsonConvert.DeserializeObject<JsonPatchDocument<UpdateEmployeeDto>>(employeePatchDocument);
+
+            if (patchDoc == null)
+            {
+                return BadRequest("Invalid patch document.");
+            }
+
+            var profileImage = form.Files.GetFile("profileImage");
+
+            if (profileImage != null && profileImage.Length > 0)
+            {
+                isModified = true;
+
+                var existingEmployee = await _employeeBal.GetEmployeeByIdAsync(id);
+                if (existingEmployee == null)
+                {
+                    return NotFound("Employee not found.");
+                }
+
+                // Delete previous image if exists
+                var existingImagePath = Path.Combine(this.ImageUploadDirectory, existingEmployee.ProfileImagePath);
+                if (System.IO.File.Exists(existingImagePath))
+                {
+                    System.IO.File.Delete(existingImagePath);
+                }
+
+                var relativePath = await _profileImagesHelper.HandleProfileImageUpload(profileImage, id);
+                patchDoc.Replace(e => e.ProfileImagePath, relativePath);
+            }
+
+            var result = await _employeeBal.UpdateEmployeeAsync(id, patchDoc);
+
+            if (isModified || result > 0)
+            {
+                return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), result);
+            }
+
+            return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEE_NOT_FOUND.ToString());
         }
         catch (Exception)
         {
@@ -67,13 +134,13 @@ public class EmployeeController : ControllerBase
         }
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete]
     [Authorize]
-    public async Task<IActionResult> DeleteEmployee(int id)
+    public async Task<IActionResult> DeleteEmployee([FromQuery] IEnumerable<int> ids)
     {
         try
         {
-            var result = await _employeeBal.DeleteEmployeeAsync(id);
+            var result = await _employeeBal.DeleteEmployeeAsync(ids);
             if (result == 0)
             {
                 return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEE_NOT_FOUND.ToString());
@@ -87,17 +154,17 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpGet]
-    //[Authorize]
+    [Authorize]
     public async Task<IActionResult> GetEmployees([FromQuery] EmployeeFilters? filters, [FromQuery] int? modeStatusId)
     {
         try
         {
-            
+
             if (filters != null)
             {
                 if (modeStatusId != null)
                 {
-                    if(filters.EmployeeId == null)
+                    if (filters.EmployeeId == null)
                     {
                         return ResponseHelper.WrapResponse(400, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEE_ID_IS_REQUIRED.ToString());
                     }
@@ -112,19 +179,21 @@ public class EmployeeController : ControllerBase
                 if (filters.RoleId != null)
                 {
                     var employeesByRole = await _employeeBal.GetEmployeeByRoleAsync(filters.RoleId);
-                    if (employeesByRole == null || employeesByRole.Count == 0)
+                    if (employeesByRole == null)
                     {
                         return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEES_NOT_FOUND.ToString());
                     }
+                    await _profileImagesHelper.LoadProfileImages(employeesByRole);
                     return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), employeesByRole);
                 }
                 if (filters.DepartmentId != null)
                 {
                     var employeesByDept = await _employeeBal.GetEmployeeByDepartmentIdAsync(filters.DepartmentId);
-                    if (employeesByDept == null || employeesByDept.Count == 0)
+                    if (employeesByDept == null)
                     {
                         return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEES_NOT_FOUND.ToString());
                     }
+                    await _profileImagesHelper.LoadProfileImages(employeesByDept);
                     return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), employeesByDept);
                 }
                 if (filters.EmployeeId != null)
@@ -134,15 +203,29 @@ public class EmployeeController : ControllerBase
                     {
                         return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEE_NOT_FOUND.ToString());
                     }
+                    await _profileImagesHelper.LoadProfileImages(employee);
                     return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), employee);
                 }
-                
+                if (!string.IsNullOrWhiteSpace(filters.GroupBy) && filters.GroupBy.Equals("department", StringComparison.OrdinalIgnoreCase))
+                {
+                    var groupedEmployees = await _employeeBal.GetEmployeesGroupedByDepartmentsAsync();
+                    if (groupedEmployees == null)
+                    {
+                        return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEES_NOT_FOUND.ToString());
+                    }
+
+                    return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), groupedEmployees);
+                }
+
 
                 var employees = await _employeeBal.FilterEmployeesAsync(filters);
-                if (employees == null || employees.Count == 0)
+                if (employees == null)
                 {
                     return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.FAILED_TO_FILTER_EMPLOYEES.ToString());
                 }
+
+                await _profileImagesHelper.LoadProfileImages(employees);
+
                 return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), employees);
 
             }
@@ -153,6 +236,7 @@ public class EmployeeController : ControllerBase
                 {
                     return ResponseHelper.WrapResponse(404, StatusMessage.ERROR.ToString(), null, ErrorCodes.EMPLOYEES_NOT_FOUND.ToString());
                 }
+                await _profileImagesHelper.LoadProfileImages(employees);
                 return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), employees);
             }
         }
@@ -194,4 +278,5 @@ public class EmployeeController : ControllerBase
         }
         return null;
     }
+
 }

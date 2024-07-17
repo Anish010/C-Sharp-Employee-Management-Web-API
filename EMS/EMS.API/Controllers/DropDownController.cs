@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace EMS.API.Controllers;
 
 [Route("/Api/DropDown")]
+[Authorize]
 [ApiController]
 public class DropDownController : ControllerBase
 {
@@ -23,7 +24,7 @@ public class DropDownController : ControllerBase
     }
 
     [HttpGet("Departments")]
-    [Authorize]
+    
     public async Task<IActionResult> GetDepartmentsAsync()
     {
         try
@@ -42,7 +43,7 @@ public class DropDownController : ControllerBase
     }
 
     [HttpGet("Locations")]
-    [Authorize]
+    
     public async Task<IActionResult>GetLocationsAsync()
     {
         try
@@ -61,7 +62,7 @@ public class DropDownController : ControllerBase
     }
 
     [HttpGet("Managers")]
-    [Authorize]
+    
     public async Task<IActionResult>GetManagersAsync()
     {
         try
@@ -80,7 +81,7 @@ public class DropDownController : ControllerBase
     }
 
     [HttpGet("Projects")]
-    [Authorize]
+    
     public async Task<IActionResult> GetProjectsAsync()
     {
         try

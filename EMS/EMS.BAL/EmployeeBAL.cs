@@ -4,6 +4,7 @@ using EMS.DAL.DTO;
 using EMS.DAL.Interfaces;
 using EMS.DB.Models;
 using Serilog;
+using Microsoft.AspNetCore.JsonPatch;
 
 namespace EMS.BAL;
 
@@ -60,24 +61,24 @@ public class EmployeeBAL : IEmployeeBAL
 
     }
 
-    public async Task<int> DeleteEmployeeAsync(int id)
+    public async Task<int> DeleteEmployeeAsync(IEnumerable<int> ids)
     {
         try
         {
-            return await _employeeDal.DeleteAsync(id);
+            return await _employeeDal.DeleteAsync(ids);
         }
         catch (Exception ex)
         {
-            _logger.Error($"Error deleting employee: {ex.Message}");
+            _logger.Error($"Error deleting employees: {ex.Message}");
             throw;
         }
     }
 
-    public async Task<int> UpdateEmployeeAsync(int id, UpdateEmployeeDto employee)
+    public async Task<int> UpdateEmployeeAsync(int id, JsonPatchDocument<UpdateEmployeeDto> patchDoc)
     {
         try
         {
-            return await _employeeDal.UpdateAsync(id, employee);
+            return await _employeeDal.UpdateAsync(id, patchDoc);
         }
         catch (Exception ex)
         {
@@ -157,6 +158,20 @@ public class EmployeeBAL : IEmployeeBAL
         catch (Exception ex)
         {
             _logger.Error($"Error occured while updating mode status :  {ex.Message}");
+            throw;
+        }
+    }
+
+    public async Task<List<DepartmentEmployeeDto>> GetEmployeesGroupedByDepartmentsAsync()
+    {
+        try
+        {
+            List<DepartmentEmployeeDto> employees = await _employeeDal.RetrieveGroupedByDepartmentsAsync() ?? new List<DepartmentEmployeeDto>();
+            return employees;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Error occurred while retrieving employees grouped by departments: {ex.Message}");
             throw;
         }
     }

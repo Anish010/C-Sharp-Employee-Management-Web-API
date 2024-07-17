@@ -2,20 +2,13 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using EMS.API.Helpers;
-using EMS.BAL;
 using EMS.BAL.Interfaces;
-using EMS.BAL.Models;
-using EMS.DAL;
 using EMS.DAL.DTO;
-using EMS.DAL.Interfaces;
 using EMS.DAL.Models;
-using EMS.DB.Context;
+using EMS.DB.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using BCrypt.Net;
-using Serilog;
 
 namespace EMS.API.Controllers;
 
@@ -43,12 +36,15 @@ public class AuthController : ControllerBase
             AuthenticateResponse? authResponse = await _authBal.AuthenticateAsync(model.Email);
             if (authResponse == null || !BCrypt.Net.BCrypt.Verify(model.Password, authResponse.Password))
             {
-                return ResponseHelper.WrapResponse(401, "error", "Invalid email or password");
+                return ResponseHelper.WrapResponse(401, StatusMessage.ERROR.ToString(), null, ErrorCodes.INVALID_CREDENTIALS.ToString());
             }
 
             authResponse.Password = null;
 
+
             var token = GenerateJwtToken(authResponse);
+            await LoadProfileImages(authResponse);
+            authResponse.ProfileImagePath = null;
 
             var responseData = new
             {
@@ -78,12 +74,18 @@ public class AuthController : ControllerBase
             }
 
             var token = GenerateJwtToken(result);
+
+
+
             result.Password = null;
+
             var responseData = new
             {
                 Response = result,
                 Token = token
             };
+
+            
 
             return ResponseHelper.WrapResponse(200, StatusMessage.SUCCESS.ToString(), responseData);
         }
@@ -93,7 +95,6 @@ public class AuthController : ControllerBase
         }
     }
 
-    [Authorize]
     [HttpGet("Logout")]
     public async Task<IActionResult> LogoutAsync([FromQuery] int EmployeeId)
     {
@@ -131,5 +132,32 @@ public class AuthController : ControllerBase
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private async Task LoadProfileImages(AuthenticateResponse response)
+    {
+        if (!string.IsNullOrEmpty(response.ProfileImagePath))
+        {
+            try
+            {
+                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), response.ProfileImagePath);
+
+                if (System.IO.File.Exists(fullPath))
+                {
+                    using (var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read))
+                    {
+                        using (var memoryStream = new MemoryStream())
+                        {
+                            await stream.CopyToAsync(memoryStream);
+                            response.ProfileImageData = memoryStream.ToArray();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error loading profile image for employee {response.Id}: {ex.Message}");
+            }
+        }
     }
 }

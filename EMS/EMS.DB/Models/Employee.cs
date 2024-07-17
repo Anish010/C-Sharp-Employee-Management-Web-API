@@ -6,7 +6,6 @@ namespace EMS.DB.Models;
 public class Employee
 {
     [Key]
-    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column(TypeName = "int")]
     public int Id { get; set; }
 
@@ -14,7 +13,7 @@ public class Employee
     [MaxLength(10)]
     [Column(TypeName = "varchar(10)")]
     [Index(IsUnique = true)]
-    public string? UID { get; set; }
+    public string UID { get; set; }
 
     
     [MaxLength(16)]
@@ -53,6 +52,9 @@ public class Employee
 
     public int? ModeStatusId { get; set; } = 1;
 
+    public string? ProfileImagePath { get; set; } = string.Empty;
+
+
     // Navigation properties
     [ForeignKey("LocationId")]
     public Location? Location { get; set; }
@@ -71,6 +73,8 @@ public class Employee
 
     [ForeignKey("ModeStatusId")]
     public Mode? Mode { get; set; }
+
+
 
     public override string ToString()
     {

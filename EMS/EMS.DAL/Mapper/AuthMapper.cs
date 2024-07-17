@@ -22,6 +22,8 @@ public class AuthMapper : IAuthMapper
             LastName = employee.LastName,
             Email = employee.Email,
             UID = employee.UID,
+            RoleName = employee.Role?.Name,
+            ProfileImagePath = employee.ProfileImagePath,
         };
     }
 }
